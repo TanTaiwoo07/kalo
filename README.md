@@ -55,7 +55,7 @@ GitHub：[TanTaiwoo07/kalo](https://github.com/TanTaiwoo07/kalo) ·
 
 `kilo.c`（snaptoken 的 kilo 教程源码）与 `example/` 下两份网上的 FHQ-Treap 参考实现
 共 1211 行，**不是本项目的作品**，已停止跟踪、不进仓库（文件仍保留在本地供参考）。
-仓库里 40 个受版本控制的文件，其余均为本人与 AI 协作产出。
+仓库里 42 个受版本控制的文件，其余均为本人与 AI 协作产出。
 
 > 之所以把这件事写清楚：这个项目是用来练思维和 C++ 手感的，而「哪些是自己想清楚的、
 > 哪些是别人手里拿来的」恰恰是最需要分清的部分。
@@ -96,7 +96,7 @@ New-Item -ItemType Directory -Force -Path build | Out-Null
 & 'D:/msys64/mingw64/bin/g++.exe' -std=c++17 -Wall -Wextra -Wpedantic -g `
     -I src/platform/win32 -I src `
     main.cpp src/Editor.cpp src/Cursor.cpp src/Terminal.cpp src/Screen.cpp `
-    src/Buffer.cpp src/PieceTable.cpp src/Row.cpp -o build/kalo.exe
+    src/Buffer.cpp src/PieceTable.cpp src/Row.cpp src/Utf8.cpp src/Syntax.cpp -o build/kalo.exe
 
 .\build\kalo.exe            # 新建
 .\build\kalo.exe 某文件.txt  # 打开
@@ -108,7 +108,7 @@ New-Item -ItemType Directory -Force -Path build | Out-Null
 mkdir -p build
 g++ -std=c++17 -Wall -Wextra -Wpedantic -g -Isrc \
     main.cpp src/Editor.cpp src/Cursor.cpp src/Terminal.cpp src/Screen.cpp \
-    src/Buffer.cpp src/PieceTable.cpp src/Row.cpp -o build/kalo
+    src/Buffer.cpp src/PieceTable.cpp src/Row.cpp src/Utf8.cpp src/Syntax.cpp -o build/kalo
 ./build/kalo 某文件.txt
 ```
 
@@ -123,7 +123,7 @@ ctest --test-dir <构建目录> --output-on-failure
 ```
 
 CTest 会跑两个用例：`kalo_core`（逻辑层单元测试）与 `kalo_smoke`（端到端冒烟）。
-后者需要 `bash` 与 `timeout`，Windows 上走 MSYS2 / Git Bash；没有的话它会失败，
+后者需要 `bash`（Windows 上走 MSYS2 / Git Bash），`timeout` 是可选依赖；没有 bash 时会跳过冒烟测试，
 但 `kalo_core` 仍然有效。
 
 ## 在 VS Code 里用
@@ -165,12 +165,12 @@ CTest 会跑两个用例：`kalo_core`（逻辑层单元测试）与 `kalo_smoke
 ```bash
 # Windows
 & 'D:/msys64/mingw64/bin/g++.exe' -std=c++17 -Wall -Wextra -Wpedantic -I src `
-    test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp -o build/kalo_tests.exe
+    test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp src/Utf8.cpp src/Syntax.cpp -o build/kalo_tests.exe
 .\build\kalo_tests.exe
 
 # Linux / WSL
 g++ -std=c++17 -Wall -Wextra -Wpedantic -Isrc \
-    test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp -o build/kalo_tests
+    test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp src/Utf8.cpp src/Syntax.cpp -o build/kalo_tests
 ./build/kalo_tests
 ```
 

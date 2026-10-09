@@ -4,11 +4,11 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <cstdio>
+#include <cerrno>
 
 // ─── 归属：本文件约 70% 原始手搓 ────────────────────────────────────
 // 手搓：getCursorPosition / 构造函数 / appendRow / clear / print。
-// AI 改的只有 getWindowSize 里那三处兜底分支（下方有 [AI] 标记），
-// 目的是让它不再去读 stdin —— 详见函数内的说明。
+// AI 补了 getWindowSize 的非交互兜底，并在发布验证时补上 print 的短写处理。
 
 // 非交互式环境下的兜底尺寸：够放下状态栏，也够绝大多数段落显示。
 constexpr int kFallbackRows = 24; // [AI]
@@ -117,11 +117,22 @@ void Screen::clear()
     buffer.clear();
 }
 
-// 手搓。整帧一次写出。
-// 问题：write 可能只写一部分（短写），返回值也没检查，丢字符不会有任何提示。
+// 整帧写出；短写继续补齐，信号中断则重试，其他错误报告后停止本帧输出。
 void Screen::print()
 {
     const char *p = buffer.c_str();
     int len = static_cast<int>(buffer.size());
-    write(STDOUT_FILENO, p, len);
+    while (len > 0)
+    {
+        const int written = static_cast<int>(write(STDOUT_FILENO, p, len));
+        if (written < 0 && errno == EINTR)
+            continue;
+        if (written <= 0)
+        {
+            std::fprintf(stderr, "kalo: screen write failed\n");
+            return;
+        }
+        p += written;
+        len -= written;
+    }
 }

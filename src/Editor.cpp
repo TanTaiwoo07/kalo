@@ -650,10 +650,10 @@ void Editor::refreshScreen(Screen &screen)
 // 配合 main.cpp 里那个没有出口的 while (true)，退出路径是很脆的。
 void Editor::quit(Terminal &t)
 {
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
+    const int cleared = static_cast<int>(write(STDOUT_FILENO, "\x1b[2J", 4));
+    const int positioned = static_cast<int>(write(STDOUT_FILENO, "\x1b[H", 3));
     t.cleanup(); // 恢复终端后再退出
-    exit(0);
+    exit(cleared == 4 && positioned == 3 ? 0 : 1);
 }
 
 void Editor::processKeyPress(Terminal &t, Screen &screen)

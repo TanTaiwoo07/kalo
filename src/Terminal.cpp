@@ -91,7 +91,7 @@ enum class ReadResult
 
 // 判定「单独按了 Esc」之前要等多久。太短会误判方向键（ESC [ A 三个字节
 // 到达有间隔），太长会让按 Esc 的手感发黏。60ms 在两者之间。
-constexpr int kEscTimeoutMs = 60;
+[[maybe_unused]] constexpr int kEscTimeoutMs = 60;
 
 static ReadResult readStdinByte(char *out)
 {
