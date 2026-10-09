@@ -1,0 +1,33 @@
+# 构建产物
+build/
+
+# Visual Studio 的 CMake 集成输出目录（out/build/<配置>）
+out/
+
+# 可执行文件与中间产物
+*.exe
+*.o
+*.obj
+*.out
+
+# 编译数据库（CMake 会生成到 build/ 里）
+compile_commands.json
+
+# 冒烟测试的临时目录
+.kalo_smoke_*
+.kalo_smoke_tmp/
+
+# 编辑器 / IDE 的本地状态
+*.swp
+*~
+.vs/
+.idea/
+
+# 第三方参考代码，只留在本地、不进仓库。
+# kilo.c 是 snaptoken 的 kilo 教程源码；example/ 下两份是网上找来的
+# FHQ-Treap / Piece Table 参考实现。它们都不是本项目的作品，
+# 推到公开仓库既会带来版权问题，也会混淆「哪些是我写的」。
+# 文件本身仍在磁盘上，只是不再被 git 跟踪。要恢复跟踪：
+#   git rm --cached 的反操作 = git add -f kilo.c example/
+kilo.c
+example/

@@ -1,0 +1,89 @@
+name: CI
+
+# 这条流水线存在的第一目的，是补上本机验证不到的那条路：POSIX 上的真机构建与运行。
+# Windows 两条工具链（MinGW / MSVC）在开发机上已经跑过，但 Linux 与 macOS 没有真机跑过，
+# 所以这里把它们拉起来实跑一遍同样的测试。
+#
+# 警告一律当错误：本机编译器版本固定，换到 CI 上 GCC / Clang 版本往往更新，
+# 会把一些潜伏的写法照出来。宁可红在这里，也不要让它悄悄溜进仓库。
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux · GCC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  macos:
+    name: macOS · Clang
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows-msvc:
+    name: Windows · MSVC
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Visual Studio 生成器自动定位 MSVC，无需预先加载开发者命令行环境。
+      # 多配置构建和测试都显式选择 Release；TARGET_FILE 会解析到对应产物。
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  windows-mingw:
+    name: Windows · MinGW
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Werror
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

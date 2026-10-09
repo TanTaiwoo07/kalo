@@ -1,0 +1,25 @@
+# kalo 的代码风格：大括号另起一行（Allman），4 空格缩进，指针符号贴变量名。
+# VS Code 里把 editor.formatOnSave 打开后就会按这份配置排版。
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+BreakBeforeBraces: Allman
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+PointerAlignment: Right
+ReferenceAlignment: Pointer
+AccessModifierOffset: -4
+IndentCaseLabels: false
+
+SpaceBeforeParens: ControlStatements
+SortIncludes: Never
+MaxEmptyLinesToKeep: 1

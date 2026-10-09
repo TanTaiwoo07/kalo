@@ -1,0 +1,30 @@
+# 这个项目按 LF 换行维护：源码、脚本、配置一律 LF。
+#
+# 起因是 Windows 上 git 默认的 core.autocrlf 会在检出时把 LF 换成 CRLF，
+# 而 Bash 脚本一旦带上 \r 就会直接跑不起来（#!/usr/bin/env bash\r 找不到解释器），
+# 冒烟测试的字节级比对也会失配。所以这里显式钉死。
+
+* text=auto eol=lf
+
+*.c        text eol=lf
+*.cpp      text eol=lf
+*.h        text eol=lf
+*.hpp      text eol=lf
+*.sh       text eol=lf
+*.md       text eol=lf
+*.json     text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.cmake    text eol=lf
+CMakeLists.txt text eol=lf
+.clang-format  text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+
+# 二进制文件不要做任何转换
+*.exe     binary
+*.o       binary
+*.obj     binary
+*.png     binary
+*.jpg     binary
+*.pdf     binary

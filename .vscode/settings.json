@@ -1,0 +1,33 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureOnOpen": false,
+    "cmake.parallelJobs": 4,
+    "cmake.generator": "MinGW Makefiles",
+    "editor.formatOnSave": false,
+    "files.eol": "\n",
+    "files.associations": {
+        "*.h": "cpp",
+        "*.cpp": "cpp"
+    },
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.compilerPath": "D:/msys64/mingw64/bin/g++.exe",
+    "C_Cpp.default.intelliSenseMode": "windows-gcc-x64",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/src/platform/win32",
+        "D:/msys64/mingw64/include",
+        "D:/msys64/mingw64/x86_64-w64-mingw32/include"
+    ],
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools",
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    },
+    "[c]": {
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    },
+    "C_Cpp.errorSquiggles": "enabled",
+    "terminal.integrated.sendKeybindingsToShell": true
+}

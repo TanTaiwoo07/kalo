@@ -1,0 +1,17 @@
+[
+    {
+        "name": "MinGW-w64 GCC 16 (D:/msys64/mingw64)",
+        "compilers": {
+            "C": "D:/msys64/mingw64/bin/gcc.exe",
+            "CXX": "D:/msys64/mingw64/bin/g++.exe"
+        },
+        "isTrusted": true
+    },
+    {
+        "name": "GCC (Linux / WSL)",
+        "compilers": {
+            "C": "/usr/bin/gcc",
+            "CXX": "/usr/bin/g++"
+        }
+    }
+]

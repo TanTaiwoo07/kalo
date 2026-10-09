@@ -1,0 +1,34 @@
+{
+    "version": 4,
+    "configurations": [
+        {
+            "name": "Windows (MinGW-w64)",
+            "includePath": [
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/src/platform/win32",
+                "D:/msys64/mingw64/include",
+                "D:/msys64/mingw64/x86_64-w64-mingw32/include"
+            ],
+            "defines": [
+                "_WIN32"
+            ],
+            "compilerPath": "D:/msys64/mingw64/bin/g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        },
+        {
+            "name": "Linux (WSL / g++)",
+            "includePath": [
+                "${workspaceFolder}/src",
+                "/usr/include",
+                "/usr/include/x86_64-linux-gnu"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ]
+}

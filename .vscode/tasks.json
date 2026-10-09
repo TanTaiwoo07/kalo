@@ -1,0 +1,91 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "构建 kalo",
+            "detail": "编译编辑器本体",
+            "type": "shell",
+            "windows": {
+                "command": "New-Item -ItemType Directory -Force -Path build | Out-Null; & 'D:/msys64/mingw64/bin/g++.exe' -std=c++17 -Wall -Wextra -Wpedantic -g -I src/platform/win32 -I src main.cpp src/Editor.cpp src/Cursor.cpp src/Terminal.cpp src/Screen.cpp src/Buffer.cpp src/PieceTable.cpp src/Row.cpp -o build/kalo.exe"
+            },
+            "linux": {
+                "command": "mkdir -p build && g++ -std=c++17 -Wall -Wextra -Wpedantic -g -Isrc main.cpp src/Editor.cpp src/Cursor.cpp src/Terminal.cpp src/Screen.cpp src/Buffer.cpp src/PieceTable.cpp src/Row.cpp -o build/kalo"
+            },
+            "osx": {
+                "command": "mkdir -p build && clang++ -std=c++17 -Wall -Wextra -Wpedantic -g -Isrc main.cpp src/Editor.cpp src/Cursor.cpp src/Terminal.cpp src/Screen.cpp src/Buffer.cpp src/PieceTable.cpp src/Row.cpp -o build/kalo"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "构建逻辑层测试",
+            "detail": "编译 PieceTable / Buffer / Row 的单元测试",
+            "type": "shell",
+            "windows": {
+                "command": "New-Item -ItemType Directory -Force -Path build | Out-Null; & 'D:/msys64/mingw64/bin/g++.exe' -std=c++17 -Wall -Wextra -Wpedantic -g -I src test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp -o build/kalo_tests.exe"
+            },
+            "linux": {
+                "command": "mkdir -p build && g++ -std=c++17 -Wall -Wextra -Wpedantic -g -Isrc test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp -o build/kalo_tests"
+            },
+            "osx": {
+                "command": "mkdir -p build && clang++ -std=c++17 -Wall -Wextra -Wpedantic -g -Isrc test/test_pt.cpp src/PieceTable.cpp src/Buffer.cpp src/Row.cpp -o build/kalo_tests"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ]
+        },
+        {
+            "label": "运行逻辑层测试",
+            "detail": "跑单元测试：PieceTable 随机差分、规模、内存收支，以及 Buffer 行视图一致性",
+            "type": "shell",
+            "windows": {
+                "command": "${workspaceFolder}/build/kalo_tests.exe"
+            },
+            "linux": {
+                "command": "${workspaceFolder}/build/kalo_tests"
+            },
+            "osx": {
+                "command": "${workspaceFolder}/build/kalo_tests"
+            },
+            "dependsOn": "构建逻辑层测试",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "端到端冒烟测试",
+            "detail": "把按键序列喂给编辑器，核对保存到磁盘的内容",
+            "type": "shell",
+            "windows": {
+                "command": "& 'D:/msys64/usr/bin/bash.exe' test/smoke_editor.sh build/kalo.exe"
+            },
+            "linux": {
+                "command": "bash test/smoke_editor.sh build/kalo"
+            },
+            "osx": {
+                "command": "bash test/smoke_editor.sh build/kalo"
+            },
+            "dependsOn": "构建 kalo",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
