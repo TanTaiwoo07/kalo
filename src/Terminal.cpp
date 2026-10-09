@@ -7,17 +7,31 @@
 #include <string>
 #include <vector>
 #include "Terminal.h"
+#include "Utf8.h"
 
 #ifdef _WIN32
 #include <fcntl.h> // _O_BINARY
 #include <io.h>    // _setmode
 #include <stdio.h> // _fileno
+#include "platform/win32/ConsoleInput.h"
 #endif
 
 void Terminal::cleanup()
 {
+#ifdef _WIN32
+    if (stdin_is_tty_)
+        SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), orig_termios.win_in_mode);
+    if (orig_termios.win_out_ok)
+        SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), orig_termios.win_out_mode);
+    if (saved_input_cp_)
+        SetConsoleCP(saved_input_cp_);
+    if (saved_output_cp_)
+        SetConsoleOutputCP(saved_output_cp_);
+#else
     if (stdin_is_tty_)
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+#endif
+    stdin_is_tty_ = false;
 }
 
 #ifdef _WIN32
@@ -95,7 +109,12 @@ enum class ReadResult
 
 static ReadResult readStdinByte(char *out)
 {
+#ifdef _WIN32
+    const int n = Terminal::stdin_is_tty_ ? readConsoleUtf8Byte(out)
+                                        : static_cast<int>(::read(STDIN_FILENO, out, 1));
+#else
     const int n = static_cast<int>(::read(STDIN_FILENO, out, 1));
+#endif
 
     if (n == 1)
         return ReadResult::Byte;
@@ -111,11 +130,19 @@ static ReadResult readStdinByte(char *out)
 
 Key Terminal::getkey()
 {
+    static int pending_byte = -1;
     char c = 0;
 
     for (;;)
     {
-        const ReadResult r = readStdinByte(&c);
+        ReadResult r = ReadResult::Byte;
+        if (pending_byte >= 0)
+        {
+            c = static_cast<char>(pending_byte);
+            pending_byte = -1;
+        }
+        else
+            r = readStdinByte(&c);
         if (r == ReadResult::Retry)
             continue; // 还没按键，接着等
         if (r == ReadResult::Eof)
@@ -125,7 +152,32 @@ Key Terminal::getkey()
 
     if (c != '\x1b')
     {
-        return static_cast<Key>(c);
+        const unsigned char lead = static_cast<unsigned char>(c);
+        if (lead < 0x80)
+            return c == '\n' ? Key::Enter : static_cast<Key>(lead);
+        text_input_.assign(1, c);
+        const int expected = lead >= 0xC2 && lead <= 0xDF ? 2 :
+                             lead >= 0xE0 && lead <= 0xEF ? 3 :
+                             lead >= 0xF0 && lead <= 0xF4 ? 4 : 1;
+        for (int i = 1; i < expected;)
+        {
+            char next = 0;
+            const ReadResult r = readStdinByte(&next);
+            if (r == ReadResult::Retry)
+                continue;
+            if (r == ReadResult::Eof)
+                break;
+            if ((static_cast<unsigned char>(next) & 0xC0) != 0x80)
+            {
+                pending_byte = static_cast<unsigned char>(next);
+                break;
+            }
+            text_input_ += next;
+            i++;
+        }
+        if (expected == 1 || Utf8::seqLen(text_input_, 0) != expected)
+            text_input_ = "\xEF\xBF\xBD";
+        return Key::Text;
     }
 
 #ifdef _WIN32
@@ -184,8 +236,7 @@ Key Terminal::getkey()
 
 void Terminal::disableRawMode()
 {
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
-        die("tcsetattr");
+    cleanup();
 }
 
 void Terminal::enableRawMode()
@@ -201,6 +252,19 @@ void Terminal::enableRawMode()
     // tcgetattr 失败说明标准输入不是交互式终端（管道、重定向）：
     // 这时不进入裸模式，后面照常逐字节读取即可。
     stdin_is_tty_ = (tcgetattr(STDIN_FILENO, &orig_termios) == 0);
+#ifdef _WIN32
+    DWORD output_mode = 0;
+    if (GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &output_mode))
+    {
+        saved_output_cp_ = GetConsoleOutputCP();
+        SetConsoleOutputCP(CP_UTF8);
+    }
+    if (stdin_is_tty_)
+    {
+        saved_input_cp_ = GetConsoleCP();
+        SetConsoleCP(CP_UTF8);
+    }
+#endif
     if (!stdin_is_tty_)
         return;
 

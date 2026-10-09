@@ -44,7 +44,7 @@ int Row::update()
             continue;
         }
 
-        const int len = Utf8::seqLen(chars, i);
+        const int len = Utf8::nextBoundary(chars, i) - i;
         const unsigned cp = Utf8::decode(chars, i);
 
         if (cp < 32 || cp == 127)
@@ -56,7 +56,7 @@ int Row::update()
         else
         {
             render.append(chars, i, len);
-            rx += Utf8::isWide(cp) ? 2 : 1;
+            rx += Utf8::charWidth(chars, i);
         }
         i += len;
     }

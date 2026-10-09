@@ -58,7 +58,13 @@ void Cursor::move(Key key, Buffer &buf)
     // 另一处风格问题：(int)buf.size() 是 C 风格强转，同文件其他位置用的
     // 是 static_cast，两种写法并存。
     if (y < (int)buf.size())
+    {
         x = std::min(x, (int)buf[y].chars.size());
+        if (x < static_cast<int>(buf[y].chars.size()))
+            x = buf[y].cellCharByte(buf[y].cellOfCharByte(x));
+    }
+    else
+        x = 0;
 }
 
 void Cursor::scroll(Screen &screen, Buffer &buf)

@@ -16,6 +16,7 @@ public:
     ~Terminal();
 
     static Key getkey();
+    static const std::string &textInput() { return text_input_; }
 
     /// 恢复终端原始模式。
     ///
@@ -32,6 +33,9 @@ public:
     bool rawModeActive() const { return stdin_is_tty_; }
 
 private:
+    static inline std::string text_input_;
+    unsigned int saved_input_cp_ = 0;
+    unsigned int saved_output_cp_ = 0;
     termios orig_termios;
 
     void disableRawMode();

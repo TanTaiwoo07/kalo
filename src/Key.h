@@ -40,6 +40,7 @@ enum class Key : int
     // 标准输入已结束（被重定向成管道或文件）。取值刻意远离 1000 那段哨兵区间，
     // 免得掉进 processKeyPress 里 `raw < 1000` 那个「当作普通字符插入」的分支。
     Eof = 2000,
+    Text = 2001, // 完整的非 ASCII UTF-8 输入，见 Terminal::textInput()
 };
 
 // 手搓。转义序列 → 按键的查表。

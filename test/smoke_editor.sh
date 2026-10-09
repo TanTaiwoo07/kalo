@@ -99,7 +99,7 @@ check "输入 abc 后保存"           'abc\x13\x11'             'abc'
 check "多行：ab 回车 cd"          'ab\rcd\x13\x11'          "$(printf 'ab\ncd')"
 check "退格删掉最后一个字符"       'abc\x7f\x13\x11'         'ab'
 check "方向键上移后插入"           'ab\rcd\x1b[AX\x13\x11'   "$(printf 'abX\ncd')"
-check "方向键下移后插入"           'ab\rcd\x1b[BY\x13\x11'   "$(printf 'ab\ncdY')"
+check "方向键下移到虚拟末行后插入" 'ab\rcd\x1b[BY\x13\x11'   "$(printf 'ab\ncd\nY')"
 check "Home 回到行首后插入"        'ab\x1b[HZ\x13\x11'       'Zab'
 check "End 跳到行尾后插入"         'ab\x1b[H\x1b[FZ\x13\x11' 'abZ'
 check "Delete 删除光标处字符"      'ab\x1b[H\x1b[3~\x13\x11' 'b'
@@ -122,6 +122,19 @@ check "搜索忽略大小写命中"         'One ONE two\x06one\x09\rX\x13\x11' 
 check "中文输入后保存"             'a\xe4\xb8\xadb\x13\x11'                  "$(printf 'a\xe4\xb8\xadb')"
 check "退格删掉整个汉字"           'a\xe4\xb8\xad\x7f\x13\x11'               'a'
 check "左方向键跨过整个汉字"        'a\xe4\xb8\xad\x1b[DX\x13\x11'            "$(printf 'aX\xe4\xb8\xad')"
+
+check "空文件先回车" '\rX\x13\x11' "$(printf '\nX')"
+check "虚拟末行回车不移动上一行" 'abc\x1b[B\rX\x13\x11' "$(printf 'abc\n\nX')"
+check "连续空行后输入" 'abc\r\rX\x13\x11' "$(printf 'abc\n\nX')"
+check "emoji 原样保存" '中文😀🚀🫠\x13\x11' '中文😀🚀🫠'
+check "组合 emoji 整体退格" 'A👨‍👩‍👧‍👦\x7fB\x13\x11' 'AB'
+check "肤色 emoji 整体移动" 'A👍🏽B\x1b[D\x1b[DX\x13\x11' 'AX👍🏽B'
+check "中文整字撤销" 'A中\x1a\x13\x11' 'A'
+check "中文搜索" '甲乙\x06乙\rX\x13\x11' '甲X乙'
+check "emoji 搜索" 'A😀B\x06😀\rX\x13\x11' 'AX😀B'
+check "中文搜索退格" '甲乙\x06甲乙\x7f\rX\x13\x11' 'X甲乙'
+check "上下移动不切断中文" '中文\r1234\x1b[AX\x13\x11' "$(printf '中X文\n1234')"
+check "LF 回车" 'a\nb\x13\x11' "$(printf 'a\nb')"
 
 # 回归用例：不带文件名启动，按 Ctrl-S 会进入 "Save as" 提示行。
 # 提示行如果不处理「输入流结束」，getkey 会一直返回 Eof，进程就空转到永远 ——

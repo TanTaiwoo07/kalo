@@ -60,6 +60,16 @@ target_include_directories(kalo_tests PRIVATE src)
 
 add_test(NAME kalo_core COMMAND kalo_tests)
 
+if(WIN32)
+    add_executable(kalo_console_tests test/test_console_win32.cpp src/Terminal.cpp src/Utf8.cpp)
+    target_include_directories(kalo_console_tests PRIVATE src src/platform/win32)
+    if(MSVC)
+        target_include_directories(kalo_console_tests PRIVATE src/platform/msvc)
+    endif()
+    add_test(NAME kalo_console_unicode COMMAND kalo_console_tests)
+    set_tests_properties(kalo_console_unicode PROPERTIES TIMEOUT 20)
+endif()
+
 # 端到端冒烟测试：把按键序列喂给编辑器本体，核对落盘内容。
 # 脚本是 bash 写的，所以先看有没有 bash —— MSVC 那条构建路径上 UNIX/MINGW 都不成立，
 # 但只要装了 Git Bash 或 MSYS2 就照样能跑，比按平台一刀切更实在。
