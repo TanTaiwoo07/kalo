@@ -543,13 +543,15 @@ void testBufferEdit()
     CHECK_EQ(phantom.toString(), std::string("ab\nc"));
     CHECK_EQ(phantom[1].chars, std::string("c"));
 
-    // 幽灵行上按回车：编辑器会先把光标夹回文档内，这里只验证不会越界崩溃
+    // 虚拟末行按回车应新增空行，不能夹回上一行再拆分它。
     Buffer phantom2;
     phantom2.fromText("ab\n");
     int pcx = 0;
     int pcy = 1;
     phantom2.insertNewline(1, 0, pcx, pcy);
-    CHECK_EQ(phantom2.toString(), std::string("ab\n"));
+    CHECK_EQ(phantom2.toString(), std::string("ab\n\n"));
+    CHECK_EQ(pcy, 2);
+    CHECK_EQ(pcx, 0);
 }
 
 // 行视图不能和 PieceTable 里的权威文本跑偏
@@ -558,8 +560,9 @@ bool checkViewConsistent(const Buffer &b, const char *where)
     std::string joined;
     for (int i = 0; i < static_cast<int>(b.size()); ++i)
     {
+        if (i > 0)
+            joined += '\n';
         joined += b[i].chars;
-        joined += '\n';
     }
 
     const std::string text = b.toString();
@@ -1175,6 +1178,58 @@ void testPieceTableDeleteStress()
     CHECK(pt.totalChars() == kDocChars + (kDocChars / 60) - kOps);
 }
 
+void testUnicodeAndVirtualLineRegression()
+{
+    const std::vector<std::string> units = {u8"中", u8"😀", u8"🚀", u8"🫠", u8"👍🏽",
+                                          u8"👨‍👩‍👧‍👦", u8"🇨🇳", u8"❤️", u8"1️⃣"};
+    for (const auto &unit : units)
+    {
+        Row row;
+        row.chars = "a" + unit + "b";
+        row.update();
+        const int end = 1 + static_cast<int>(unit.size());
+        CHECK_EQ(row.cellCount(), 3);
+        CHECK_EQ(row.width(), 4);
+        CHECK_EQ(row.nextBoundary(1), end);
+        CHECK_EQ(row.prevBoundary(end), 1);
+        CHECK_EQ(row.cellText(1), unit == u8"1️⃣" ? std::string("1 ") : unit);
+        CHECK_EQ(Utf8::truncate(row.chars, 2), std::string("a"));
+        CHECK_EQ(Utf8::truncate(row.chars, 3), "a" + unit);
+        Buffer buffer;
+        buffer.insertText(0, 0, row.chars);
+        int x = end, y = 0;
+        buffer.del(y, x, y);
+        CHECK_EQ(buffer.toString(), std::string("ab"));
+        CHECK(buffer.undo());
+        CHECK_EQ(buffer.toString(), row.chars);
+    }
+    Buffer blank;
+    int x = 0, y = 0;
+    blank.insertNewline(y, x, x, y);
+    CHECK_EQ(blank.toString(), std::string("\n"));
+    CHECK_EQ(y, 1);
+    blank.insertNewline(y, x, x, y);
+    blank.insertText(y, x, u8"中文😀");
+    CHECK_EQ(blank.toString(), std::string(u8"\n\n中文😀"));
+    CHECK(checkViewConsistent(blank, "empty Enter"));
+    for (const std::string doc : {"abc", "abc\n"})
+    {
+        Buffer b;
+        b.fromText(doc);
+        x = 0;
+        y = 1;
+        b.insertNewline(y, x, x, y);
+        b.insertText(y, x, "X");
+        CHECK_EQ(b.toString(), std::string("abc\n\nX"));
+        CHECK(checkViewConsistent(b, "virtual Enter"));
+        CHECK(b.undo());
+        CHECK(b.undo());
+        CHECK_EQ(b.toString(), doc);
+    }
+    CHECK_EQ(Utf8::seqLen(std::string("\xED\xA0\x80"), 0), 1);
+    CHECK_EQ(Utf8::seqLen(std::string("\xF4\x90\x80\x80"), 0), 1);
+}
+
 } // namespace
 
 int main()
@@ -1205,6 +1260,7 @@ int main()
     testSyntaxHighlight();
     testSyntaxMultilineComment();
     testPieceTableDeleteStress();
+    testUnicodeAndVirtualLineRegression();
 
     std::printf("\n=== 断言 %d 项，失败 %d 项 ===\n", g_checks, g_failed);
     if (g_failed == 0)

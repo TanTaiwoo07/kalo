@@ -41,9 +41,10 @@ static bool isPrintableAscii(int kc)
 
 void Editor::insert(Key key)
 {
-    char c = static_cast<char>(static_cast<int>(key));
-    buf.insert(cur.y, cur.x, c);
-    cur.x++;
+    const std::string text = key == Key::Text ? Terminal::textInput() :
+                            std::string(1, static_cast<char>(static_cast<int>(key)));
+    buf.insertText(cur.y, cur.x, text);
+    cur.x += static_cast<int>(text.size());
     markSyntaxDirty(cur.y);
 }
 
@@ -59,6 +60,8 @@ void Editor::DrawRows(Screen &screen)
 {
     for (int i = 0; i < cur.screenrows; i++)
     {
+        // 每行独立定位并清除旧字形，组合字符回退时不留下终端绘制残影。
+        screen.appendRow("\x1b[" + std::to_string(i + 1) + ";1H\x1b[2K");
         int filerow = i + cur.rowoff;
         if (filerow >= (int)buf.size())
         {
@@ -145,9 +148,10 @@ void Editor::DrawRows(Screen &screen)
                 }
 
                 // 宽字符被水平滚动截断时，把缺掉的那一列补成空格，否则整行会错位
-                const int clipped = visStart - crx;
-                if (clipped > 0)
-                    screen.appendRow(std::string(static_cast<size_t>(clipped), ' '));
+                const int visibleWidth = std::min(crx + cellWidth, visEnd) -
+                                         std::max(crx, visStart);
+                if (crx < visStart || crx + cellWidth > visEnd)
+                    screen.appendRow(std::string(static_cast<size_t>(visibleWidth), ' '));
                 else
                     screen.appendRow(row.cellText(cell));
             }
@@ -165,20 +169,18 @@ void Editor::DrawRows(Screen &screen)
 void Editor::drawStatusBar(Screen &screen)
 {
     screen.appendRow("\x1b[7m");
-    char buf_status[80];
     std::string left = filename.empty() ? "[No Name]" : filename;
-    if (left.size() > 20)
-        left = left.substr(0, 20);
+    left = Utf8::truncate(left, 20);
     // 状态栏顺带显示当前着色规则，好确认高亮有没有按预期生效
     std::string dirtyStr = buf.dirty ? "(modified)" : "";
     if (syntax_)
         dirtyStr += std::string(" ") + syntax_->name;
 
-    int len = snprintf(buf_status, sizeof(buf_status), "%.20s - %zu lines %s",
-                       left.c_str(), buf.size(), dirtyStr.c_str());
-    if (len > screen.col)
-        len = screen.col;
-    screen.appendRow(std::string(buf_status, len));
+    Row status;
+    status.chars = Utf8::truncate(left + " - " + std::to_string(buf.size()) +
+                                 " lines " + dirtyStr, screen.col);
+    int len = status.update();
+    screen.appendRow(status.render);
 
     char rbuf[80];
     int rlen = snprintf(rbuf, sizeof(rbuf), "%d/%zu", cur.y + 1, buf.size());
@@ -199,11 +201,13 @@ void Editor::drawStatusBar(Screen &screen)
 void Editor::drawMessageBar(Screen &screen)
 {
     screen.appendRow("\x1b[K");
-    int msglen = (int)statusmsg.size();
-    if (msglen > screen.col)
-        msglen = screen.col;
-    if (msglen && time(nullptr) - statusmsg_time < 5)
-        screen.appendRow(statusmsg.substr(0, msglen));
+    if (!statusmsg.empty() && time(nullptr) - statusmsg_time < 5)
+    {
+        Row message;
+        message.chars = Utf8::truncate(statusmsg, screen.col);
+        message.update();
+        screen.appendRow(message.render);
+    }
 }
 
 void Editor::setStatusMessage(const std::string &msg)
@@ -229,7 +233,11 @@ void Editor::clampCursor()
     }
 
     if (cur.y >= (int)buf.size())
-        cur.y = (int)buf.size() - 1;
+    {
+        cur.y = static_cast<int>(buf.size());
+        cur.x = 0;
+        return;
+    }
     if (cur.y < 0)
         cur.y = 0;
 
@@ -237,6 +245,8 @@ void Editor::clampCursor()
         cur.x = (int)buf[cur.y].chars.size();
     if (cur.x < 0)
         cur.x = 0;
+    if (cur.x < static_cast<int>(buf[cur.y].chars.size()))
+        cur.x = buf[cur.y].cellCharByte(buf[cur.y].cellOfCharByte(cur.x));
 }
 
 void Editor::openFile(std::string fname)
@@ -323,8 +333,10 @@ std::string Editor::prompt(std::string promptMsg, Terminal &t, Screen &screen)
     std::string input;
     while (true)
     {
-        char msg[128];
-        snprintf(msg, sizeof(msg), promptMsg.c_str(), input.c_str());
+        std::string msg = promptMsg;
+        const size_t placeholder = msg.find("%s");
+        if (placeholder != std::string::npos)
+            msg.replace(placeholder, 2, input);
         setStatusMessage(msg);
         refreshScreen(screen);
 
@@ -341,7 +353,7 @@ std::string Editor::prompt(std::string promptMsg, Terminal &t, Screen &screen)
         if (c == static_cast<int>(Key::Backspace) || c == CTRL_KEY('h'))
         {
             if (!input.empty())
-                input.pop_back();
+                input.erase(Utf8::prevBoundary(input, static_cast<int>(input.size())));
         }
         else if (c == static_cast<int>(Key::Escape))
         {
@@ -356,8 +368,10 @@ std::string Editor::prompt(std::string promptMsg, Terminal &t, Screen &screen)
                 return input;
             }
         }
-        else             if (isPrintableAscii(c))
-                input += (char)c;
+        else if (c == static_cast<int>(Key::Text))
+            input += Terminal::textInput();
+        else if (isPrintableAscii(c))
+            input += static_cast<char>(c);
     }
 }
 
@@ -599,11 +613,15 @@ void Editor::find(Terminal &t, Screen &screen)
         if (key == Key::Backspace || raw == CTRL_KEY('h'))
         {
             if (!query.empty())
-                query.pop_back();
+                query.erase(Utf8::prevBoundary(query, static_cast<int>(query.size())));
         }
         else if (raw == '\t')
         {
             ignore_case_ = !ignore_case_;
+        }
+        else if (key == Key::Text)
+        {
+            query += Terminal::textInput();
         }
         else if (isPrintableAscii(raw))
         {
@@ -618,6 +636,8 @@ void Editor::find(Terminal &t, Screen &screen)
 
 void Editor::refreshScreen(Screen &screen)
 {
+    screen.getWindowSize();
+    cur.screenrows = std::max(0, screen.row - 2);
     // 高亮在绘制前补齐：编辑过之后 hl 的长度会与 cell 数不一致，
     // DrawRows 只是「越界按 Normal 处理」，真正的重算在这里发生。
     updateSyntax();
@@ -678,6 +698,10 @@ void Editor::processKeyPress(Terminal &t, Screen &screen)
 
     switch (key)
     {
+    case Key::MouseLeft:
+        cur.click(Terminal::mouseColumn(), Terminal::mouseRow(), screen.col, buf);
+        clearSearchHighlight();
+        break;
     case Key::Enter:
         buf.insertNewline(cur.y, cur.x, cur.x, cur.y);
         // 换行会把一行拆成两行，两行的着色都要重算
@@ -701,6 +725,7 @@ void Editor::processKeyPress(Terminal &t, Screen &screen)
     case Key::PageUp:
     case Key::PageDown:
     {
+        const int saved_x = cur.x;
         // 手搓。翻页：先跳到当前页的首/末行，再移动一整屏。
         //
         // 原代码问题：
@@ -722,6 +747,9 @@ void Editor::processKeyPress(Terminal &t, Screen &screen)
         int times = cur.screenrows;
         while (times--)
             cur.move(key == Key::PageUp ? Key::ArrowUp : Key::ArrowDown, buf);
+        cur.y = std::min(cur.y, std::max(0, static_cast<int>(buf.size()) - 1));
+        cur.x = saved_x;
+        clampCursor();
     }
     break;
 
@@ -791,7 +819,7 @@ void Editor::processKeyPress(Terminal &t, Screen &screen)
     {
         // refresh only
     }
-    else if (raw != static_cast<int>(Key::Enter) && raw != static_cast<int>(Key::Backspace) && raw != static_cast<int>(Key::Delete) && raw != static_cast<int>(Key::Escape) && raw < 1000)
+    else if (key == Key::Text || isPrintableAscii(raw) || raw == '\t')
     {
         insert(key);
     }
