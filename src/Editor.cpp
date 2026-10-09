@@ -60,6 +60,8 @@ void Editor::DrawRows(Screen &screen)
 {
     for (int i = 0; i < cur.screenrows; i++)
     {
+        // 每行独立定位并清除旧字形，组合字符回退时不留下终端绘制残影。
+        screen.appendRow("\x1b[" + std::to_string(i + 1) + ";1H\x1b[2K");
         int filerow = i + cur.rowoff;
         if (filerow >= (int)buf.size())
         {
@@ -200,7 +202,12 @@ void Editor::drawMessageBar(Screen &screen)
 {
     screen.appendRow("\x1b[K");
     if (!statusmsg.empty() && time(nullptr) - statusmsg_time < 5)
-        screen.appendRow(Utf8::truncate(statusmsg, screen.col));
+    {
+        Row message;
+        message.chars = Utf8::truncate(statusmsg, screen.col);
+        message.update();
+        screen.appendRow(message.render);
+    }
 }
 
 void Editor::setStatusMessage(const std::string &msg)
@@ -629,6 +636,8 @@ void Editor::find(Terminal &t, Screen &screen)
 
 void Editor::refreshScreen(Screen &screen)
 {
+    screen.getWindowSize();
+    cur.screenrows = std::max(0, screen.row - 2);
     // 高亮在绘制前补齐：编辑过之后 hl 的长度会与 cell 数不一致，
     // DrawRows 只是「越界按 Normal 处理」，真正的重算在这里发生。
     updateSyntax();
@@ -689,6 +698,10 @@ void Editor::processKeyPress(Terminal &t, Screen &screen)
 
     switch (key)
     {
+    case Key::MouseLeft:
+        cur.click(Terminal::mouseColumn(), Terminal::mouseRow(), screen.col, buf);
+        clearSearchHighlight();
+        break;
     case Key::Enter:
         buf.insertNewline(cur.y, cur.x, cur.x, cur.y);
         // 换行会把一行拆成两行，两行的着色都要重算

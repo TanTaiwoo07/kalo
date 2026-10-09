@@ -59,6 +59,30 @@ int main(int argc, char **)
         }
         if (Terminal::getkey() != Key::Enter)
             return 7;
+        DWORD raw_mode = 0;
+        GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &raw_mode);
+        if (!(raw_mode & ENABLE_MOUSE_INPUT) || (raw_mode & ENABLE_QUICK_EDIT_MODE))
+            return 9;
+        CONSOLE_SCREEN_BUFFER_INFO info = {};
+        GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info);
+        INPUT_RECORD mouse = {};
+        mouse.EventType = MOUSE_EVENT;
+        mouse.Event.MouseEvent.dwButtonState = FROM_LEFT_1ST_BUTTON_PRESSED;
+        mouse.Event.MouseEvent.dwMousePosition.X = info.srWindow.Left + 3;
+        mouse.Event.MouseEvent.dwMousePosition.Y = info.srWindow.Top + 2;
+        DWORD written = 0;
+        WriteConsoleInputW(GetStdHandle(STD_INPUT_HANDLE), &mouse, 1, &written);
+        if (Terminal::getkey() != Key::MouseLeft || Terminal::mouseColumn() != 3 ||
+            Terminal::mouseRow() != 2)
+            return 10;
+        INPUT_RECORD arrow = {};
+        arrow.EventType = KEY_EVENT;
+        arrow.Event.KeyEvent.bKeyDown = TRUE;
+        arrow.Event.KeyEvent.wRepeatCount = 2;
+        arrow.Event.KeyEvent.wVirtualKeyCode = VK_LEFT;
+        WriteConsoleInputW(GetStdHandle(STD_INPUT_HANDLE), &arrow, 1, &written);
+        if (Terminal::getkey() != Key::ArrowLeft || Terminal::getkey() != Key::ArrowLeft)
+            return 11;
     }
     DWORD restored_input = 0, restored_output = 0;
     GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &restored_input);

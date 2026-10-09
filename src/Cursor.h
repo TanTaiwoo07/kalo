@@ -25,4 +25,5 @@ struct Cursor
     void init(Screen &screen);
     void move(Key key, Buffer &buf);
     void scroll(Screen &screen, Buffer &buf);
+    void click(int column, int row, int columns, const Buffer &buf);
 };

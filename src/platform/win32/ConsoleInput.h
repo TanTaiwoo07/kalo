@@ -1,52 +1,111 @@
 #pragma once
-
 #include <windows.h>
 #include <string>
 
-// 控制台输入使用 UTF-16 API，避免 CRT 单字节读取丢失中文和代理对。
-// 管道仍由调用方按原始 UTF-8 字节读取。
+// 读取 Unicode 输入记录，避免 ReadConsoleW 丢弃鼠标事件。
+struct ConsoleInputState
+{
+    std::string pending;
+    size_t offset = 0;
+    wchar_t high = 0;
+};
+
+inline ConsoleInputState &consoleInputState()
+{
+    static ConsoleInputState state;
+    return state;
+}
+
+inline bool consoleBytesPending()
+{
+    const auto &s = consoleInputState();
+    return s.offset < s.pending.size();
+}
+
 inline int readConsoleUtf8Byte(char *out)
 {
-    static std::string pending;
-    static size_t offset = 0;
-    static wchar_t carried = 0;
-    if (offset == pending.size())
+    auto &s = consoleInputState();
+    while (!consoleBytesPending())
     {
-        wchar_t chars[2] = {};
+        s.pending.clear();
+        s.offset = 0;
+        INPUT_RECORD event = {};
         DWORD got = 0;
-        const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
-        if (carried)
-        {
-            chars[0] = carried;
-            carried = 0;
-        }
-        else if (!ReadConsoleW(input, chars, 1, &got, nullptr))
+        if (!ReadConsoleInputW(GetStdHandle(STD_INPUT_HANDLE), &event, 1, &got))
             return -1;
-        else if (!got)
-            return 0;
-        int count = 1;
-        if (chars[0] >= 0xD800 && chars[0] <= 0xDBFF)
+        if (!got)
+            continue;
+        if (event.EventType == MOUSE_EVENT)
         {
-            if (!ReadConsoleW(input, chars + 1, 1, &got, nullptr) || !got)
-                return -1;
-            if (chars[1] >= 0xDC00 && chars[1] <= 0xDFFF)
-                count = 2;
-            else
+            const auto &m = event.Event.MouseEvent;
+            if ((m.dwEventFlags == 0 || m.dwEventFlags == DOUBLE_CLICK) &&
+                (m.dwButtonState & FROM_LEFT_1ST_BUTTON_PRESSED))
             {
-                carried = chars[1];
+                CONSOLE_SCREEN_BUFFER_INFO info = {};
+                if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info))
+                    continue;
+                const int x = m.dwMousePosition.X - info.srWindow.Left + 1;
+                const int y = m.dwMousePosition.Y - info.srWindow.Top + 1;
+                if (x > 0 && y > 0)
+                    s.pending = "\x1b[<0;" + std::to_string(x) + ";" + std::to_string(y) + "M";
+            }
+            continue;
+        }
+        if (event.EventType != KEY_EVENT || !event.Event.KeyEvent.bKeyDown)
+            continue;
+        const auto &key = event.Event.KeyEvent;
+        std::string bytes;
+        const wchar_t unit = key.uChar.UnicodeChar;
+        if (unit != 0)
+        {
+            wchar_t chars[2] = {unit, 0};
+            int count = 1;
+            if (s.high)
+            {
+                if (unit >= 0xDC00 && unit <= 0xDFFF)
+                {
+                    chars[0] = s.high;
+                    chars[1] = unit;
+                    count = 2;
+                }
+                else
+                    bytes = "\xEF\xBF\xBD";
+                s.high = 0;
+            }
+            if (unit >= 0xD800 && unit <= 0xDBFF)
+            {
+                s.high = unit;
+                s.pending = bytes;
+                continue;
+            }
+            if (count == 1 && unit >= 0xDC00 && unit <= 0xDFFF)
                 chars[0] = 0xFFFD;
+            char encoded[8] = {};
+            const int size = WideCharToMultiByte(CP_UTF8, 0, chars, count, encoded,
+                                                sizeof(encoded), nullptr, nullptr);
+            if (size <= 0)
+                return -1;
+            bytes.append(encoded, size);
+        }
+        else
+        {
+            switch (key.wVirtualKeyCode)
+            {
+            case VK_LEFT: bytes = "\x1b[D"; break;
+            case VK_RIGHT: bytes = "\x1b[C"; break;
+            case VK_UP: bytes = "\x1b[A"; break;
+            case VK_DOWN: bytes = "\x1b[B"; break;
+            case VK_HOME: bytes = "\x1b[H"; break;
+            case VK_END: bytes = "\x1b[F"; break;
+            case VK_PRIOR: bytes = "\x1b[5~"; break;
+            case VK_NEXT: bytes = "\x1b[6~"; break;
+            case VK_DELETE: bytes = "\x1b[3~"; break;
+            default: break;
             }
         }
-        else if (chars[0] >= 0xDC00 && chars[0] <= 0xDFFF)
-            chars[0] = 0xFFFD;
-        char bytes[8] = {};
-        const int size = WideCharToMultiByte(CP_UTF8, 0, chars, count, bytes,
-                                            sizeof(bytes), nullptr, nullptr);
-        if (size <= 0)
-            return -1;
-        pending.assign(bytes, size);
-        offset = 0;
+        for (unsigned repeat = 0; repeat < key.wRepeatCount; repeat++)
+            s.pending += bytes;
     }
-    *out = pending[offset++];
+    *out = s.pending[s.offset++];
     return 1;
 }

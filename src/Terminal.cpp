@@ -18,6 +18,14 @@
 
 void Terminal::cleanup()
 {
+    if (mouse_reporting_)
+    {
+        const std::string disable = "\x1b[?1000l\x1b[?1006l";
+        if (static_cast<int>(write(STDOUT_FILENO, disable.data(),
+                                  static_cast<unsigned>(disable.size()))) < 0)
+            std::perror("disable mouse");
+        mouse_reporting_ = false;
+    }
 #ifdef _WIN32
     if (stdin_is_tty_)
         SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), orig_termios.win_in_mode);
@@ -48,6 +56,8 @@ void Terminal::cleanup()
  */
 static bool consoleInputPending(int timeoutMs)
 {
+    if (consoleBytesPending())
+        return true;
     const HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
     if (h == INVALID_HANDLE_VALUE)
         return true; // 判断不了就按「有后续输入」处理，退回原来的阻塞行为
@@ -221,7 +231,7 @@ Key Terminal::getkey()
         // CSI 形式：中间是参数字节，最后一个字节落在 0x40~0x7E 区间。
         // 一直读到终止字节，才不会给后面留下 "^[[15~" 里的那个 "~"。
         int guard = 0;
-        while (++guard <= 8)
+        while (++guard <= 64)
         {
             if (!appendIfAvailable(&b))
                 return Key::Escape;
@@ -230,6 +240,34 @@ Key Terminal::getkey()
         }
     }
 
+    // SGR 鼠标报告：ESC [ < 按钮 ; 列 ; 行 M/m。只响应左键按下。
+    if (seq.size() >= 3 && seq[0] == '[' && seq[1] == '<')
+    {
+        int values[3] = {};
+        size_t at = 2;
+        for (int part = 0; part < 3; part++)
+        {
+            const size_t start = at;
+            while (at < seq.size() && seq[at] >= '0' && seq[at] <= '9')
+            {
+                if (values[part] > 100000)
+                    return Key::None;
+                values[part] = values[part] * 10 + seq[at++] - '0';
+            }
+            if (at == start || at >= seq.size())
+                return Key::None;
+            if (part < 2 && seq[at++] != ';')
+                return Key::None;
+        }
+        if (at + 1 == seq.size() && seq[at] == 'M' && (values[0] & 0x63) == 0 &&
+            values[1] > 0 && values[2] > 0)
+        {
+            mouse_column_ = values[1] - 1;
+            mouse_row_ = values[2] - 1;
+            return Key::MouseLeft;
+        }
+        return Key::None;
+    }
     const auto it = escMap.find(seq);
     return (it != escMap.end()) ? it->second : Key::Escape;
 }
@@ -285,4 +323,12 @@ void Terminal::enableRawMode()
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 1;
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+#ifndef _WIN32
+    if (isatty(STDOUT_FILENO))
+    {
+        const std::string enable = "\x1b[?1000h\x1b[?1006h";
+        mouse_reporting_ = static_cast<int>(write(STDOUT_FILENO, enable.data(),
+                                                enable.size())) == static_cast<int>(enable.size());
+    }
+#endif
 }

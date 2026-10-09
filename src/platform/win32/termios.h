@@ -5,11 +5,9 @@
  *
  * Windows 上并没有 termios。编辑器真正需要的能力只有两条：
  *   1. 关掉回显和行缓冲，做到「按一个键就读到一个键」；
- *   2. 让方向键、Home、PageUp 这类按键以 \x1b[ 开头的转义序列返回，
- *      好让 Key.h 里那张 escMap 原封不动地继续用。
- * 这两件事在 Windows 控制台上分别对应 SetConsoleMode 的
- * ENABLE_VIRTUAL_TERMINAL_INPUT 与清掉 ENABLE_ECHO_INPUT / ENABLE_LINE_INPUT，
- * 本文件就把它们伪装成 tcgetattr / tcsetattr。
+ *   2. 启用鼠标输入记录；ConsoleInput.h 将键盘和鼠标记录转换为 UTF-8 / VT。
+ * 输入端关闭 VT 自动转换，由 ReadConsoleInputW 统一接收 Unicode 和鼠标事件。
+ * 本文件把模式配置封装成 tcgetattr / tcsetattr。
  *
  * 之所以做成「假头文件」而不是在 Terminal.cpp 里写 #ifdef：这样 src/ 下的
  * POSIX 源码一个字都不用改，Linux/WSL 的构建路径也完全没有被动过。
@@ -138,9 +136,7 @@ static inline int tcgetattr(int fd, struct termios *t)
 /*
  * 按 c_lflag 上的 ECHO / ICANON / ISIG 反推出目标控制台模式。
  *
- * 输入侧一律打开 ENABLE_VIRTUAL_TERMINAL_INPUT 并关掉 ENABLE_QUICK_EDIT_MODE：
- * 前者让按键编码成 \x1b[ 序列（与 POSIX 裸模式一致），后者不关的话鼠标点一下
- * 窗口就会把输入冻住。
+ * 输入侧启用鼠标记录并关闭快速编辑，防止点击被系统选择模式截走。
  */
 static inline int tcsetattr(int fd, int optional_actions, const struct termios *t)
 {
@@ -162,10 +158,11 @@ static inline int tcsetattr(int fd, int optional_actions, const struct termios *
 
     HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD inMode = (DWORD)t->win_in_mode;
-    inMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+    inMode &= ~ENABLE_VIRTUAL_TERMINAL_INPUT;
     inMode |= ENABLE_EXTENDED_FLAGS; /* 否则下面的 QUICK_EDIT 改动不生效 */
     inMode &= ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
-    inMode &= ~(ENABLE_QUICK_EDIT_MODE | ENABLE_MOUSE_INPUT);
+    inMode &= ~ENABLE_QUICK_EDIT_MODE;
+    inMode |= ENABLE_MOUSE_INPUT;
 
     if (t->c_lflag & ECHO)
         inMode |= ENABLE_ECHO_INPUT;

@@ -17,6 +17,8 @@ public:
 
     static Key getkey();
     static const std::string &textInput() { return text_input_; }
+    static int mouseColumn() { return mouse_column_; }
+    static int mouseRow() { return mouse_row_; }
 
     /// 恢复终端原始模式。
     ///
@@ -34,6 +36,8 @@ public:
 
 private:
     static inline std::string text_input_;
+    static inline int mouse_column_ = 0, mouse_row_ = 0;
+    bool mouse_reporting_ = false;
 #ifdef _WIN32
     unsigned int saved_input_cp_ = 0;
     unsigned int saved_output_cp_ = 0;

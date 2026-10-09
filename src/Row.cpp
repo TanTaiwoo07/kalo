@@ -55,7 +55,17 @@ int Row::update()
         }
         else
         {
-            render.append(chars, i, len);
+            // Windows Terminal 的部分字体把键帽组合叠画成重影。
+            // 仅渲染时回退为数字加空格，保留原文及两列显示单元。
+            const bool keycap = (cp >= '0' && cp <= '9') || cp == '#' || cp == '*';
+            if (keycap && len > 1 &&
+                chars.substr(i, len).find("\xE2\x83\xA3") != std::string::npos)
+            {
+                render += static_cast<char>(cp);
+                render += ' ';
+            }
+            else
+                render.append(chars, i, len);
             rx += Utf8::charWidth(chars, i);
         }
         i += len;

@@ -41,6 +41,7 @@ enum class Key : int
     // 免得掉进 processKeyPress 里 `raw < 1000` 那个「当作普通字符插入」的分支。
     Eof = 2000,
     Text = 2001, // 完整的非 ASCII UTF-8 输入，见 Terminal::textInput()
+    MouseLeft = 2002,
 };
 
 // 手搓。转义序列 → 按键的查表。
