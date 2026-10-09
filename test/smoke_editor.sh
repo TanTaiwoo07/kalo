@@ -89,7 +89,7 @@ check() {
     pass=$((pass + 1))
 }
 
-echo "kalo 端到端冒烟测试（$BIN）"
+echo "kalo 端到端冒烟测试（${BIN}）"
 echo
 
 # 按键速记：\x13 = Ctrl-S 保存，\x11 = Ctrl-Q 退出，\x1a = Ctrl-Z 撤销
