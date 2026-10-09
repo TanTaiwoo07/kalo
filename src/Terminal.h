@@ -34,8 +34,10 @@ public:
 
 private:
     static inline std::string text_input_;
+#ifdef _WIN32
     unsigned int saved_input_cp_ = 0;
     unsigned int saved_output_cp_ = 0;
+#endif
     termios orig_termios;
 
     void disableRawMode();
