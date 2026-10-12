@@ -23,8 +23,8 @@ public:
     std::string chars;   // 原始字节（权威文本在这一行上的切片）
     std::string render;  // 显示字节：制表符展开成空格，不可打印字符换成 '?'
 
-    std::vector<Hl> hl;        // 每个 cell 的高亮类型；长度不足时按 Normal 处理
-    bool hlOpenComment = false; // 本行结束时是否仍处于多行注释中
+    std::vector<Hl> hl;      // 每个 cell 的高亮类型；长度不足时按 Normal 处理
+    SyntaxState hlState;      // 本行结束时的跨行状态（处于第几条块规则，-1 表示不在）
 
     int update();
 

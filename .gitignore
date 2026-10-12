@@ -31,3 +31,6 @@ compile_commands.json
 #   git rm --cached 的反操作 = git add -f kilo.c example/
 kilo.c
 example/
+
+# 发行产物（构建脚本在 .build_check/ 下，不在仓库里）
+dist/

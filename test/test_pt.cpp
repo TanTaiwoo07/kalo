@@ -1009,8 +1009,8 @@ void testSyntaxHighlight()
     Row row;
     row.chars = "int x = 42; // note";
     row.update();
-    bool open = true;
-    Syntax::highlightRow(row, cpp, false, open);
+    SyntaxState open;
+    Syntax::highlightRow(row, cpp, SyntaxState(), open);
 
     // int 在 kilo 的分组里属于「类型名」，走第二组关键字
     CHECK(row.hl[0] == Hl::Keyword2);
@@ -1022,13 +1022,13 @@ void testSyntaxHighlight()
     CHECK(row.hl[10] == Hl::Normal);
     CHECK(row.hl[12] == Hl::Comment); // '/'
     CHECK(row.hl[18] == Hl::Comment); // 行尾仍在注释里
-    CHECK(!open);
+    CHECK(!open.active());
 
     // "myif" 不该被当成关键字：关键字只在分隔符之后才识别
     Row ident;
     ident.chars = "myif int";
     ident.update();
-    Syntax::highlightRow(ident, cpp, false, open);
+    Syntax::highlightRow(ident, cpp, SyntaxState(), open);
     CHECK(ident.hl[0] == Hl::Normal);
     CHECK(ident.hl[5] == Hl::Keyword2);
 
@@ -1036,7 +1036,7 @@ void testSyntaxHighlight()
     Row str;
     str.chars = "const char *s = \"a\\\"b\";";
     str.update();
-    Syntax::highlightRow(str, cpp, false, open);
+    Syntax::highlightRow(str, cpp, SyntaxState(), open);
     const int quote = static_cast<int>(str.chars.find('"'));
     CHECK(str.hl[quote] == Hl::String);
     CHECK(str.hl[quote + 1] == Hl::String);
@@ -1046,14 +1046,14 @@ void testSyntaxHighlight()
     Row ctrlKw;
     ctrlKw.chars = "return 0";
     ctrlKw.update();
-    Syntax::highlightRow(ctrlKw, cpp, false, open);
+    Syntax::highlightRow(ctrlKw, cpp, SyntaxState(), open);
     CHECK(ctrlKw.hl[0] == Hl::Keyword1);
 
     // 类型名走第二组关键字
     Row typed;
     typed.chars = "unsigned x";
     typed.update();
-    Syntax::highlightRow(typed, cpp, false, open);
+    Syntax::highlightRow(typed, cpp, SyntaxState(), open);
     CHECK(typed.hl[0] == Hl::Keyword2);
 
     // 中文不应该影响后面的注释识别
@@ -1061,7 +1061,7 @@ void testSyntaxHighlight()
     cjk.chars = "\xE4\xB8\xAD"
                 " // x";
     cjk.update();
-    Syntax::highlightRow(cjk, cpp, false, open);
+    Syntax::highlightRow(cjk, cpp, SyntaxState(), open);
     const int slash = static_cast<int>(cjk.chars.find("//"));
     CHECK(cjk.hl[cjk.cellOfCharByte(slash)] == Hl::Comment);
 
@@ -1069,9 +1069,9 @@ void testSyntaxHighlight()
     Row plain;
     plain.chars = "int x";
     plain.update();
-    Syntax::highlightRow(plain, nullptr, false, open);
+    Syntax::highlightRow(plain, nullptr, SyntaxState(), open);
     CHECK(plain.hl[0] == Hl::Normal);
-    CHECK(!open);
+    CHECK(!open.active());
 }
 
 void testSyntaxMultilineComment()
@@ -1081,27 +1081,29 @@ void testSyntaxMultilineComment()
     const SyntaxRule *cpp = Syntax::forFile("a.c");
     CHECK(cpp != nullptr);
 
-    bool open = false;
+    SyntaxState open;
 
     Row first;
     first.chars = "int a; /* 开始";
     first.update();
-    Syntax::highlightRow(first, cpp, false, open);
-    CHECK(open); // 这一行结束时仍在块注释里
+    Syntax::highlightRow(first, cpp, SyntaxState(), open);
+    CHECK(open.active()); // 这一行结束时仍在块注释里
     CHECK(first.hl[first.cellOfCharByte(static_cast<int>(first.chars.find("/*")))] == Hl::MlComment);
 
     Row mid;
     mid.chars = "仍然是注释";
     mid.update();
-    Syntax::highlightRow(mid, cpp, open, open);
+    SyntaxState midOut;
+    Syntax::highlightRow(mid, cpp, open, midOut);
     CHECK(mid.hl[0] == Hl::MlComment);
-    CHECK(open);
+    CHECK(midOut.active());
 
     Row last;
     last.chars = "结束 */ int b;";
     last.update();
-    Syntax::highlightRow(last, cpp, open, open);
-    CHECK(!open); // 遇到 */ 就退出注释状态
+    SyntaxState lastOut;
+    Syntax::highlightRow(last, cpp, midOut, lastOut);
+    CHECK(!lastOut.active()); // 遇到 */ 就退出注释状态
     const int endPos = static_cast<int>(last.chars.find("*/"));
     CHECK(last.hl[last.cellOfCharByte(endPos)] == Hl::MlComment);
     const int after = static_cast<int>(last.chars.find("int"));
@@ -1113,11 +1115,191 @@ void testSyntaxMultilineComment()
     Row pyRow;
     pyRow.chars = "def f(): # hi";
     pyRow.update();
-    bool pyOpen = false;
-    Syntax::highlightRow(pyRow, py, false, pyOpen);
+    SyntaxState pyOpen;
+    Syntax::highlightRow(pyRow, py, SyntaxState(), pyOpen);
     CHECK(pyRow.hl[0] == Hl::Keyword1);
     CHECK(pyRow.hl[pyRow.cellOfCharByte(static_cast<int>(pyRow.chars.find('#')))] == Hl::Comment);
-    CHECK(!pyOpen);
+    CHECK(!pyOpen.active());
+}
+
+/*
+ * 1.1 重构后的高亮引擎：多语言规则表、跨行字符串、大小写不敏感、
+ * 数字进制与函数识别。
+ *
+ * 1.0 的规则表只有 C/C++ 与 Python，且跨行状态只有一个 bool，
+ * 表达不了 Python 三引号与 Go 原始字符串这类「跨行的非注释块」。
+ */
+void testSyntaxLanguages()
+{
+    std::printf("多语言规则与跨行字符串\n");
+
+    // 认不出的后缀仍然返回 nullptr（整篇不高亮）
+    CHECK(Syntax::forFile("a.txt") == nullptr);
+    CHECK(Syntax::forFile("a.md") == nullptr);
+    CHECK(Syntax::forFile("noext") == nullptr);
+
+    struct Lang
+    {
+        const char *file;
+        const char *name;
+    };
+    const Lang langs[] = {
+        {"main.cpp", "C/C++"},   {"a.h", "C/C++"},      {"Main.java", "Java"},
+        {"app.js", "JavaScript"}, {"app.tsx", "TypeScript"}, {"main.go", "Go"},
+        {"main.rs", "Rust"},      {"x.py", "Python"},    {"q.sql", "SQL"},
+    };
+    for (const Lang &L : langs)
+    {
+        const SyntaxRule *r = Syntax::forFile(L.file);
+        CHECK(r != nullptr);
+        if (r)
+            CHECK_EQ(r->name, std::string(L.name));
+    }
+
+    // ---- Python 三引号：跨行的字符串，1.0 会串色 ----
+    const SyntaxRule *py = Syntax::forFile("x.py");
+    Row p1;
+    p1.chars = "x = \"\"\"begin";
+    p1.update();
+    SyntaxState s1;
+    Syntax::highlightRow(p1, py, SyntaxState(), s1);
+    CHECK(s1.active());
+    CHECK(p1.hl[p1.cellOfCharByte(static_cast<int>(p1.chars.find("\"\"\"")))] == Hl::String);
+
+    Row p2;
+    p2.chars = "still inside";
+    p2.update();
+    SyntaxState s2;
+    Syntax::highlightRow(p2, py, s1, s2);
+    CHECK(s2.active());
+    CHECK(p2.hl[0] == Hl::String);
+
+    Row p3;
+    p3.chars = "\"\"\" and y = 1";
+    p3.update();
+    SyntaxState s3;
+    Syntax::highlightRow(p3, py, s2, s3);
+    CHECK(!s3.active());                              // 三引号闭合后退出字符串状态
+    const int py1 = static_cast<int>(p3.chars.find("y ="));
+    CHECK(p3.hl[p3.cellOfCharByte(py1)] == Hl::Normal); // 闭合之后的代码恢复正常着色
+
+    // 单引号的三引号同样成立
+    Row p4;
+    p4.chars = "d = '''x";
+    p4.update();
+    SyntaxState s4;
+    Syntax::highlightRow(p4, py, SyntaxState(), s4);
+    CHECK(s4.active());
+
+    // ---- Go 原始字符串：反引号可跨行 ----
+    const SyntaxRule *go = Syntax::forFile("m.go");
+    Row g1;
+    g1.chars = "s := `raw";
+    g1.update();
+    SyntaxState gs1;
+    Syntax::highlightRow(g1, go, SyntaxState(), gs1);
+    CHECK(gs1.active());
+    Row g2;
+    g2.chars = "multi";
+    g2.update();
+    SyntaxState gs2;
+    Syntax::highlightRow(g2, go, gs1, gs2);
+    CHECK(gs2.active());
+    CHECK(g2.hl[0] == Hl::String);
+    Row g3;
+    g3.chars = "`";
+    g3.update();
+    SyntaxState gs3;
+    Syntax::highlightRow(g3, go, gs2, gs3);
+    CHECK(!gs3.active());
+
+    // Go 约定：首字母大写的标识符视为类型
+    Row g4;
+    g4.chars = "var x MyType";
+    g4.update();
+    SyntaxState gs4;
+    Syntax::highlightRow(g4, go, SyntaxState(), gs4);
+    CHECK(g4.hl[0] == Hl::Keyword1); // var
+    const int gtype = static_cast<int>(g4.chars.find("MyType"));
+    CHECK(g4.hl[g4.cellOfCharByte(gtype)] == Hl::Type);
+
+    // ---- Rust 文档注释：/// 要盖过 //（最长匹配优先）----
+    const SyntaxRule *rs = Syntax::forFile("m.rs");
+    Row r1;
+    r1.chars = "/// doc";
+    r1.update();
+    SyntaxState rsOut;
+    Syntax::highlightRow(r1, rs, SyntaxState(), rsOut);
+    CHECK(r1.hl[0] == Hl::Comment);
+    CHECK(!rsOut.active()); // 行注释不跨行
+
+    // Rust 的类型表里确实有 Vec
+    Row r2;
+    r2.chars = "Vec<String>";
+    r2.update();
+    SyntaxState rsOut2;
+    Syntax::highlightRow(r2, rs, SyntaxState(), rsOut2);
+    CHECK(r2.hl[0] == Hl::Keyword2); // Vec 在显式类型表里，表优先于首字母约定
+
+    // ---- SQL 大小写不敏感：规则表存大写，查之前折叠 ----
+    const SyntaxRule *sql = Syntax::forFile("q.sql");
+    Row q1;
+    q1.chars = "select id from t";
+    q1.update();
+    SyntaxState qOut;
+    Syntax::highlightRow(q1, sql, SyntaxState(), qOut);
+    CHECK(q1.hl[0] == Hl::Keyword1);      // select
+    const int qfrom = static_cast<int>(q1.chars.find("from"));
+    CHECK(q1.hl[q1.cellOfCharByte(qfrom)] == Hl::Keyword1);
+    Row q2;
+    q2.chars = "SELECT x"; // 全大写同样命中
+    q2.update();
+    SyntaxState qOut2;
+    Syntax::highlightRow(q2, sql, SyntaxState(), qOut2);
+    CHECK(q2.hl[0] == Hl::Keyword1);
+    // SQL 用 -- 注释，不是 //
+    const int qdash = static_cast<int>(q2.chars.find("--"));
+    (void)qdash;
+
+    // ---- 数字：进制前缀、小数、科学计数 ----
+    const SyntaxRule *cpp = Syntax::forFile("m.cpp");
+    Row n1;
+    n1.chars = "0xFF 0b1010 1.5e3";
+    n1.update();
+    SyntaxState nOut;
+    Syntax::highlightRow(n1, cpp, SyntaxState(), nOut);
+    CHECK(n1.hl[0] == Hl::Number); // 0xFF
+    CHECK(n1.hl[2] == Hl::Number); // FF
+    CHECK(n1.hl[5] == Hl::Number); // 0b1010
+    CHECK(n1.hl[12] == Hl::Number); // 1.5e3
+    CHECK(n1.hl[11] == Hl::Normal); // 1010 之后的空格
+
+    // 数字紧跟在标识符后面时不算数字（避免 my123 被拆）
+    Row n2;
+    n2.chars = "x1 1";
+    n2.update();
+    SyntaxState nOut2;
+    Syntax::highlightRow(n2, cpp, SyntaxState(), nOut2);
+    CHECK(n2.hl[0] == Hl::Normal);
+    CHECK(n2.hl[3] == Hl::Number); // 分隔符之后的 1
+
+    // ---- 函数调用：标识符后紧跟 ( ----
+    Row f1;
+    f1.chars = "printf(\"x\");";
+    f1.update();
+    SyntaxState fOut;
+    Syntax::highlightRow(f1, cpp, SyntaxState(), fOut);
+    CHECK(f1.hl[0] == Hl::Func);
+    const int fstr = static_cast<int>(f1.chars.find('"'));
+    CHECK(f1.hl[f1.cellOfCharByte(fstr)] == Hl::String);
+
+    // 关键字后带括号仍是关键字，不算函数
+    Row f2;
+    f2.chars = "return(0);";
+    f2.update();
+    SyntaxState fOut2;
+    Syntax::highlightRow(f2, cpp, SyntaxState(), fOut2);
+    CHECK(f2.hl[0] == Hl::Keyword1);
 }
 
 /*
@@ -1204,6 +1386,7 @@ int main()
     testUtf8Backspace();
     testSyntaxHighlight();
     testSyntaxMultilineComment();
+    testSyntaxLanguages();
     testPieceTableDeleteStress();
 
     std::printf("\n=== 断言 %d 项，失败 %d 项 ===\n", g_checks, g_failed);

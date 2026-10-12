@@ -407,26 +407,23 @@ void Editor::updateSyntax()
     if (from > rows - 1)
         from = rows - 1;
 
-    // 从第 0 行开始说明是「整篇重算」（刚打开文件、撤销、改文件名），
-    // 这时每一行都要算，不能套用下面的提前终止规则 —— 否则只有第 0 行会亮。
+    // 「整篇重算」与「增量更新」的差别就在这里：整篇重算不能提前停，
+    // 否则第 1 行之后全部不着色（增量规则被误用到全量上，是个踩过的坑）。
     const bool fullPass = (from == 0);
 
-    bool prevOpen = (from > 0) ? buf[from - 1].hlOpenComment : false;
+    SyntaxState prev = (from > 0) ? buf[from - 1].hlState : SyntaxState();
 
     for (int i = from; i < rows; i++)
     {
-        bool open = false;
-        Syntax::highlightRow(buf[i], syntax_, prevOpen, open);
+        SyntaxState next;
+        Syntax::highlightRow(buf[i], syntax_, prev, next);
 
-        const bool changed = (buf[i].hlOpenComment != open);
-        buf[i].hlOpenComment = open;
-
-        // 增量更新（改了某一行）时：状态没变且本行不处在块注释中，
-        // 后面的行不可能受影响，可以停。整篇重算时不能这么早停。
-        if (!fullPass && !changed && !open)
+        // 状态没变且本行不处在任何跨行块里，后面的行不可能受影响，可以停。
+        if (!fullPass && buf[i].hlState.block == next.block && !next.active())
             break;
 
-        prevOpen = open;
+        buf[i].hlState = next;
+        prev = next;
     }
 
     syntax_dirty_ = false;
