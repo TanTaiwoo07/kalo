@@ -58,7 +58,13 @@ void Cursor::move(Key key, Buffer &buf)
     // 另一处风格问题：(int)buf.size() 是 C 风格强转，同文件其他位置用的
     // 是 static_cast，两种写法并存。
     if (y < (int)buf.size())
+    {
         x = std::min(x, (int)buf[y].chars.size());
+        if (x < static_cast<int>(buf[y].chars.size()))
+            x = buf[y].cellCharByte(buf[y].cellOfCharByte(x));
+    }
+    else
+        x = 0;
 }
 
 void Cursor::scroll(Screen &screen, Buffer &buf)
@@ -77,4 +83,21 @@ void Cursor::scroll(Screen &screen, Buffer &buf)
         coloff = rx;
     if (rx >= coloff + screen.col)
         coloff = rx - screen.col + 1;
+}
+
+void Cursor::click(int column, int row, int columns, const Buffer &buf)
+{
+    // 状态栏、消息栏和窗口外的事件不改变编辑位置。
+    if (column < 0 || column >= columns || row < 0 || row >= screenrows)
+        return;
+    y = std::min(row + rowoff, static_cast<int>(buf.size()));
+    if (y == static_cast<int>(buf.size()))
+    {
+        x = 0;
+        return;
+    }
+    const Row &line = buf[y];
+    const int display_column = column + coloff;
+    x = display_column >= line.width() ? static_cast<int>(line.chars.size()) :
+        line.cellCharByte(line.cellOfRx(display_column));
 }

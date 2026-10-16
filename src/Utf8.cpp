@@ -19,7 +19,27 @@ bool sequenceOk(const std::string &s, int i, int expect)
         if (!isContinuation(static_cast<unsigned char>(s[i + k])))
             return false;
     }
+    const unsigned char first = static_cast<unsigned char>(s[i]);
+    const unsigned char second = static_cast<unsigned char>(s[i + 1]);
+    if (first < 0xC2 || first > 0xF4 ||
+        (first == 0xE0 && second < 0xA0) || (first == 0xED && second >= 0xA0) ||
+        (first == 0xF0 && second < 0x90) || (first == 0xF4 && second >= 0x90))
+        return false;
     return true;
+}
+
+bool extendsCluster(unsigned cp)
+{
+    return (cp >= 0x300 && cp <= 0x36F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+           (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) ||
+           (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xFE20 && cp <= 0xFE2F) ||
+           (cp >= 0x1F3FB && cp <= 0x1F3FF) || (cp >= 0xE0020 && cp <= 0xE007F) ||
+           (cp >= 0xE0100 && cp <= 0xE01EF);
+}
+
+bool regionalIndicator(unsigned cp)
+{
+    return cp >= 0x1F1E6 && cp <= 0x1F1FF;
 }
 } // namespace
 
@@ -116,9 +136,14 @@ bool Utf8::isWide(unsigned cp)
         return true;
     if (cp >= 0xFFE0 && cp <= 0xFFE6) // 全角符号
         return true;
-    if (cp >= 0x1F300 && cp <= 0x1F64F) // 常用 emoji
+    if (cp >= 0x1F300 && cp <= 0x1FAFF) // emoji（含交通、补充符号）
         return true;
-    if (cp >= 0x1F900 && cp <= 0x1F9FF) // 补充 emoji
+    if (regionalIndicator(cp) || cp == 0x231A || cp == 0x231B || cp == 0x23F0 ||
+        cp == 0x23F3 || (cp >= 0x2648 && cp <= 0x2653) || cp == 0x267F ||
+        cp == 0x2614 || cp == 0x2615 || cp == 0x26A1 || cp == 0x26BD ||
+        cp == 0x26BE || cp == 0x2705 || cp == 0x2728 || cp == 0x274C ||
+        cp == 0x274E || cp == 0x2757 || (cp >= 0x2753 && cp <= 0x2755) ||
+        cp == 0x2B50 || cp == 0x2B55)
         return true;
     if (cp >= 0x20000 && cp <= 0x3FFFD) // CJK 扩展 B 及以后
         return true;
@@ -128,7 +153,15 @@ bool Utf8::isWide(unsigned cp)
 
 int Utf8::charWidth(const std::string &s, int i)
 {
-    return isWide(decode(s, i)) ? 2 : 1;
+    int width = isWide(decode(s, i)) ? 2 : 1;
+    const int end = nextBoundary(s, i);
+    for (int at = i; at < end; at += seqLen(s, at))
+    {
+        const unsigned cp = decode(s, at);
+        if (cp == 0xFE0F || cp == 0x20E3 || isWide(cp))
+            width = 2;
+    }
+    return width;
 }
 
 int Utf8::prevBoundary(const std::string &s, int x)
@@ -139,12 +172,10 @@ int Utf8::prevBoundary(const std::string &s, int x)
     if (x > n)
         x = n;
 
-    int i = x - 1;
-    // 续字节一律往回退，最多退 3 个（UTF-8 序列最长 4 字节）
-    int guard = 0;
-    while (i > 0 && guard++ < 3 && isContinuation(static_cast<unsigned char>(s[i])))
-        i--;
-    return i;
+    int previous = 0;
+    for (int at = 0; at < x; at = nextBoundary(s, at))
+        previous = at;
+    return previous;
 }
 
 int Utf8::nextBoundary(const std::string &s, int x)
@@ -154,7 +185,37 @@ int Utf8::nextBoundary(const std::string &s, int x)
         return 0;
     if (x >= n)
         return n;
-    return x + seqLen(s, x);
+    int end = x + seqLen(s, x);
+    if (regionalIndicator(decode(s, x)) && end < n && regionalIndicator(decode(s, end)))
+        end += seqLen(s, end);
+    while (end < n)
+    {
+        const unsigned cp = decode(s, end);
+        if (extendsCluster(cp))
+            end += seqLen(s, end);
+        else if (cp == 0x200D && end + seqLen(s, end) < n)
+        {
+            end += seqLen(s, end);
+            end += seqLen(s, end);
+        }
+        else
+            break;
+    }
+    return end;
+}
+
+std::string Utf8::truncate(const std::string &s, int columns)
+{
+    int at = 0;
+    while (at < static_cast<int>(s.size()))
+    {
+        const int width = charWidth(s, at);
+        if (width > columns)
+            break;
+        columns -= width;
+        at = nextBoundary(s, at);
+    }
+    return s.substr(0, at);
 }
 
 std::string Utf8::foldCase(const std::string &s)

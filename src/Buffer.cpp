@@ -155,7 +155,12 @@ bool Buffer::locate(int offset, int &y, int &x) const
 
 void Buffer::insert(int y, int x, char c)
 {
-    if (y < 0)
+    insertText(y, x, std::string(1, c));
+}
+
+void Buffer::insertText(int y, int x, const std::string &text)
+{
+    if (y < 0 || text.empty())
         return;
 
     if (y >= static_cast<int>(rows.size()))
@@ -166,28 +171,47 @@ void Buffer::insert(int y, int x, char c)
         if (y > static_cast<int>(rows.size()))
             return;
 
+        // 虚拟末行前不一定已有换行；补齐分隔符，与本次输入一起记入撤销。
+        const int end = text_.totalChars();
+        const bool separator = end > 0 && text_.query(end - 1, 1) != "\n";
+        text_.insert(end, (separator ? "\n" : "") + text);
+        dirty++;
         Row fresh;
+        fresh.chars = text;
         fresh.update();
         rows.push_back(fresh);
-        x = 0;
+        return;
     }
 
     x = std::clamp(x, 0, static_cast<int>(rows[y].chars.size()));
 
     dirty++;
-    text_.insert(offsetOf(y, x), std::string(1, c));
+    text_.insert(offsetOf(y, x), text);
     // 手搓。往行视图里插入并重算这一行。
     //
     // 原代码问题（性能，已由基准量化）：rows[y].update() 是 O(行长)，
     // 每敲一个字符都要整行重算一遍，于是在一行里连续输入的总代价是 O(n^2)。
     // 实测往一行敲 1 万个字符耗时 190ms，而同样次数直接走 PieceTable
     // 只要个位数毫秒 —— 差两个数量级。编辑器的真实瓶颈在这里，不在存储层。
-    rows[y].chars.insert(x, 1, c);
+    rows[y].chars.insert(x, text);
     rows[y].update();
 }
 
 void Buffer::del(int y, int &x, int &cy)
 {
+    if (y == static_cast<int>(rows.size()) && !rows.empty())
+    {
+        // 虚拟末行只有在文件以换行结尾时才有可删除的分隔符。
+        const int end = text_.totalChars();
+        if (end > 0 && text_.query(end - 1, 1) == "\n")
+        {
+            text_.remove(end - 1, 1);
+            dirty++;
+        }
+        cy = y - 1;
+        x = static_cast<int>(rows.back().chars.size());
+        return;
+    }
     if (y < 0 || y >= static_cast<int>(rows.size()))
         return;
     if (x == 0 && y == 0)
@@ -218,8 +242,22 @@ void Buffer::del(int y, int &x, int &cy)
 
 void Buffer::insertNewline(int y, int x, int &cx, int &cy)
 {
-    if (y < 0 || y >= static_cast<int>(rows.size()))
+    if (y < 0 || y > static_cast<int>(rows.size()))
         return;
+
+    if (y == static_cast<int>(rows.size()))
+    {
+        const int end = text_.totalChars();
+        const bool separator = end > 0 && text_.query(end - 1, 1) != "\n";
+        text_.insert(end, separator ? "\n\n" : "\n");
+        Row fresh;
+        fresh.update();
+        rows.push_back(fresh);
+        dirty++;
+        cx = 0;
+        cy = y + 1;
+        return;
+    }
 
     x = std::clamp(x, 0, static_cast<int>(rows[y].chars.size()));
 

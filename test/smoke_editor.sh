@@ -99,7 +99,7 @@ check "输入 abc 后保存"           'abc\x13\x11'             'abc'
 check "多行：ab 回车 cd"          'ab\rcd\x13\x11'          "$(printf 'ab\ncd')"
 check "退格删掉最后一个字符"       'abc\x7f\x13\x11'         'ab'
 check "方向键上移后插入"           'ab\rcd\x1b[AX\x13\x11'   "$(printf 'abX\ncd')"
-check "方向键下移后插入"           'ab\rcd\x1b[BY\x13\x11'   "$(printf 'ab\ncdY')"
+check "方向键下移到虚拟末行后插入" 'ab\rcd\x1b[BY\x13\x11'   "$(printf 'ab\ncd\nY')"
 check "Home 回到行首后插入"        'ab\x1b[HZ\x13\x11'       'Zab'
 check "End 跳到行尾后插入"         'ab\x1b[H\x1b[FZ\x13\x11' 'abZ'
 check "Delete 删除光标处字符"      'ab\x1b[H\x1b[3~\x13\x11' 'b'
@@ -122,6 +122,56 @@ check "搜索忽略大小写命中"         'One ONE two\x06one\x09\rX\x13\x11' 
 check "中文输入后保存"             'a\xe4\xb8\xadb\x13\x11'                  "$(printf 'a\xe4\xb8\xadb')"
 check "退格删掉整个汉字"           'a\xe4\xb8\xad\x7f\x13\x11'               'a'
 check "左方向键跨过整个汉字"        'a\xe4\xb8\xad\x1b[DX\x13\x11'            "$(printf 'aX\xe4\xb8\xad')"
+
+check "空文件先回车" '\rX\x13\x11' "$(printf '\nX')"
+check "虚拟末行回车不移动上一行" 'abc\x1b[B\rX\x13\x11' "$(printf 'abc\n\nX')"
+check "连续空行后输入" 'abc\r\rX\x13\x11' "$(printf 'abc\n\nX')"
+check "emoji 原样保存" '中文😀🚀🫠\x13\x11' '中文😀🚀🫠'
+check "组合 emoji 整体退格" 'A👨‍👩‍👧‍👦\x7fB\x13\x11' 'AB'
+check "肤色 emoji 整体移动" 'A👍🏽B\x1b[D\x1b[DX\x13\x11' 'AX👍🏽B'
+check "中文整字撤销" 'A中\x1a\x13\x11' 'A'
+check "中文搜索" '甲乙\x06乙\rX\x13\x11' '甲X乙'
+check "emoji 搜索" 'A😀B\x06😀\rX\x13\x11' 'AX😀B'
+check "中文搜索退格" '甲乙\x06甲乙\x7f\rX\x13\x11' 'X甲乙'
+check "上下移动不切断中文" '中文\r1234\x1b[AX\x13\x11' "$(printf '中X文\n1234')"
+check "LF 回车" 'a\nb\x13\x11' "$(printf 'a\nb')"
+check "鼠标点击 ASCII" 'abcd\x1b[<0;3;1MX\x13\x11' 'abXcd'
+check "鼠标点击中文右半格" '中文\x1b[<0;2;1MX\x13\x11' 'X中文'
+check "鼠标点击 emoji" 'A😀B\x1b[<0;3;1MX\x13\x11' 'AX😀B'
+check "鼠标点击键帽编号" '1️⃣中文\x1b[<0;3;1MX\x13\x11' '1️⃣X中文'
+check "鼠标点击空白至行尾" 'abc\x1b[<0;20;1MX\x13\x11' 'abcX'
+check "鼠标点击第二行" 'abc\rdef\x1b[<0;2;2MX\x13\x11' "$(printf 'abc\ndXef')"
+check "鼠标释放和右键不插入协议文本" 'abc\x1b[<0;1;1m\x1b[<2;1;1MX\x13\x11' 'abcX'
+check "鼠标点击状态栏不移动" 'abc\x1b[<0;1;23MX\x13\x11' 'abcX'
+check "鼠标报告允许长坐标" 'abc\x1b[<0;12345;12345MX\x13\x11' 'abcX'
+check "鼠标点击制表符内部" 'a\tb\x1b[<0;3;1MX\x13\x11' "$(printf 'aX\tb')"
+check "鼠标点击虚拟末行" 'abc\x1b[<0;1;2MX\x13\x11' "$(printf 'abc\nX')"
+check "鼠标非法坐标不混入正文" 'abc\x1b[<0;0;1M\x1b[<0;9999999999;1MX\x13\x11' 'abcX'
+
+long_text=''
+for ((i=0; i<90; i++)); do long_text="${long_text}a"; done
+# 输入 90 个字符后水平偏移为 11；点屏幕第 2 列对应原文偏移 12。
+check "鼠标水平滚动坐标" "${long_text}\x1b[<0;2;1MX\x13\x11" "${long_text:0:12}X${long_text:12}"
+many_lines=''
+for ((i=0; i<25; i++)); do many_lines="${many_lines}a\r"; done
+expected_lines=''
+for ((i=0; i<25; i++)); do
+    if [ "$i" -eq 4 ]; then expected_lines="${expected_lines}Xa\n";
+    else expected_lines="${expected_lines}a\n"; fi
+done
+# 24 行终端中的文本区为 22 行，光标第 26 行时 rowoff=4。
+check "鼠标垂直滚动坐标" "${many_lines}\x1b[<0;1;1MX\x13\x11" "$(printf "$expected_lines")"
+
+# 检查渲染字节，而不仅是存盘：编号回退显示，但原文保持不变。
+total=$((total + 1))
+printf '1️⃣ 2️⃣ 3️⃣\x13\x11' | ${TIMEOUT} "$BIN" "$TMP/keycaps.txt" > "$TMP/keycaps.out" 2>/dev/null
+if [ $? -eq 0 ] && grep -aq '1  ' "$TMP/keycaps.out" &&
+   ! grep -aq '1️⃣' "$TMP/keycaps.out" && grep -q '1️⃣ 2️⃣ 3️⃣' "$TMP/keycaps.txt"; then
+    pass=$((pass + 1))
+else
+    echo '  [FAIL] 键帽显示回退且原文保留'
+    fail=$((fail + 1))
+fi
 
 # 回归用例：不带文件名启动，按 Ctrl-S 会进入 "Save as" 提示行。
 # 提示行如果不处理「输入流结束」，getkey 会一直返回 Eof，进程就空转到永远 ——

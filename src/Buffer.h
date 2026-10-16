@@ -32,6 +32,7 @@ public:
     const Row &operator[](int i) const { return rows[i]; }
 
     void insert(int y, int x, char c);
+    void insertText(int y, int x, const std::string &text);
     void del(int y, int &x, int &cy);
     void insertNewline(int y, int x, int &cx, int &cy);
     void clear();

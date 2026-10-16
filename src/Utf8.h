@@ -31,11 +31,13 @@ bool isWide(unsigned cp);
 /// s[i] 处字符占的显示列数（宽字符 2，其余 1；控制字符编译期按 1 处理，
 /// 因为 Row::update 会把它们渲染成 '?'）。
 int charWidth(const std::string &s, int i);
+// 按显示单元裁剪，避免状态栏截断中文或 emoji 的 UTF-8 字节。
+std::string truncate(const std::string &s, int columns);
 
-/// 从 x 回退到前一个字符的起始字节下标（x 自身是字符边界时返回前一个边界）。
+/// 回退一个显示单元；支持常见组合音标、emoji 修饰、国旗和 ZWJ 序列。
 int prevBoundary(const std::string &s, int x);
 
-/// 从 x 前进到下一个字符的起始字节下标。
+/// 前进一个显示单元（非完整的 Unicode 字素分割实现）。
 int nextBoundary(const std::string &s, int x);
 
 /// ASCII 大小写折叠：只处理 A-Z，其余字节原样返回。
