@@ -109,3 +109,20 @@ add_executable(kalo_bench
 )
 
 target_include_directories(kalo_bench PRIVATE src)
+
+# 规模基准：专门回答「打开一个 10 MB 文件要多久」和「插入删除是不是 O(log n)」。
+# 同样不进 ctest。手动跑：cmake --build build && ./build/kalo_bench_scale
+add_executable(kalo_bench_scale
+    test/bench_scale.cpp
+    src/PieceTable.cpp
+    src/Buffer.cpp
+    src/Row.cpp
+    src/Utf8.cpp
+)
+
+target_include_directories(kalo_bench_scale PRIVATE src)
+
+if(WIN32)
+    # GetProcessMemoryInfo 用来量装载后的工作集增量
+    target_link_libraries(kalo_bench_scale PRIVATE psapi)
+endif()
